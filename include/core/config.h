@@ -4,12 +4,12 @@
 #include <cstdint>
 #include <string>
 
-// 版本信息
+// Version information
 #define NEXT_GEN_VERSION_MAJOR 0
 #define NEXT_GEN_VERSION_MINOR 1
 #define NEXT_GEN_VERSION_PATCH 0
 
-// 平台检测
+// Platform detection
 #if defined(_WIN32) || defined(_WIN64)
     #define NEXT_GEN_PLATFORM_WINDOWS
 #elif defined(__linux__)
@@ -20,7 +20,7 @@
     #error "Unsupported platform"
 #endif
 
-// 导出宏定义
+// Export macro definition
 #ifdef NEXT_GEN_PLATFORM_WINDOWS
     #ifdef NEXT_GEN_EXPORTS
         #define NEXT_GEN_API __declspec(dllexport)
@@ -31,10 +31,10 @@
     #define NEXT_GEN_API __attribute__((visibility("default")))
 #endif
 
-// 命名空间
+// Namespace
 namespace next_gen {
 
-// 基本类型定义
+// Basic type definitions
 using i8 = int8_t;
 using i16 = int16_t;
 using i32 = int32_t;
@@ -46,7 +46,7 @@ using u64 = uint64_t;
 using f32 = float;
 using f64 = double;
 
-// 服务器配置
+// Server configuration
 struct ServerConfig {
     std::string server_name;
     std::string ip;
@@ -56,7 +56,7 @@ struct ServerConfig {
     u32 message_queue_size;
     bool enable_monitoring;
     
-    // 默认配置
+    // Default configuration
     ServerConfig() :
         server_name("NextGenServer"),
         ip("0.0.0.0"),

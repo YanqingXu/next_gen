@@ -9,44 +9,50 @@
 
 namespace next_gen {
 
-// 错误代码枚举
+// Error code enumeration
 enum class ErrorCode {
-    // 通用错误
+    // General errors
     SUCCESS = 0,
     UNKNOWN_ERROR,
     NOT_IMPLEMENTED,
     INVALID_ARGUMENT,
     OUT_OF_RANGE,
     
-    // 系统错误
+    // System errors
     SYSTEM_ERROR,
     
-    // 网络错误
+    // Network errors
     NETWORK_ERROR,
     CONNECTION_FAILED,
     CONNECTION_CLOSED,
     TIMEOUT,
     
-    // 消息错误
+    // Message errors
     MESSAGE_ERROR,
     INVALID_MESSAGE,
     MESSAGE_TOO_LARGE,
     
-    // 服务错误
+    // Service errors
     SERVICE_ERROR,
     SERVICE_NOT_FOUND,
     SERVICE_ALREADY_EXISTS,
     SERVICE_NOT_STARTED,
     SERVICE_ALREADY_STARTED,
     
-    // 模块错误
+    // Session errors
+    SESSION_ERROR,
+    SESSION_NOT_FOUND,
+    SESSION_ALREADY_EXISTS,
+    SESSION_CLOSED,
+    
+    // Module errors
     MODULE_ERROR,
     MODULE_NOT_FOUND,
     MODULE_ALREADY_EXISTS,
     MODULE_INITIALIZATION_FAILED
 };
 
-// 错误类别
+// Error category
 class NEXT_GEN_API ErrorCategory : public std::error_category {
 public:
     static const ErrorCategory& instance() {
@@ -78,6 +84,10 @@ public:
             case ErrorCode::SERVICE_ALREADY_EXISTS: return "Service already exists";
             case ErrorCode::SERVICE_NOT_STARTED: return "Service not started";
             case ErrorCode::SERVICE_ALREADY_STARTED: return "Service already started";
+            case ErrorCode::SESSION_ERROR: return "Session error";
+            case ErrorCode::SESSION_NOT_FOUND: return "Session not found";
+            case ErrorCode::SESSION_ALREADY_EXISTS: return "Session already exists";
+            case ErrorCode::SESSION_CLOSED: return "Session closed";
             case ErrorCode::MODULE_ERROR: return "Module error";
             case ErrorCode::MODULE_NOT_FOUND: return "Module not found";
             case ErrorCode::MODULE_ALREADY_EXISTS: return "Module already exists";
@@ -87,12 +97,12 @@ public:
     }
 };
 
-// 创建错误代码
+// Create error code
 inline std::error_code make_error_code(ErrorCode e) {
     return {static_cast<int>(e), ErrorCategory::instance()};
 }
 
-// 错误异常类
+// Error exception class
 class NEXT_GEN_API Error : public std::system_error {
 public:
     Error(ErrorCode code, const std::string& what_arg)
@@ -104,30 +114,35 @@ public:
     ErrorCode code() const {
         return static_cast<ErrorCode>(std::system_error::code().value());
     }
+    
+    // 添加message方法，返回错误信息
+    std::string message() const {
+        return what();
+    }
 };
 
-// 结果类模板，用于返回值或错误
+// Result template class for returning value or error
 template<typename T>
 class Result {
 public:
-    // 成功构造函数
+    // Success constructor
     Result(const T& value) : value_(new T(value)), has_error_(false) {}
     Result(T&& value) : value_(new T(std::move(value))), has_error_(false) {}
     
-    // 错误构造函数
+    // Error constructor
     Result(ErrorCode code, const std::string& what_arg)
-        : error_(new Error(code, what_arg)), has_error_(true) {}
+        : error_(std::make_unique<Error>(code, what_arg)), has_error_(true), value_(nullptr) {}
     
     Result(ErrorCode code)
-        : error_(new Error(code)), has_error_(true) {}
+        : error_(std::make_unique<Error>(code)), has_error_(true), value_(nullptr) {}
     
     Result(const Error& error)
-        : error_(new Error(error)), has_error_(true) {}
+        : error_(std::make_unique<Error>(error.code(), error.what())), has_error_(true), value_(nullptr) {}
     
-    // 检查是否有错误
+    // Check if has error
     bool has_error() const { return has_error_; }
     
-    // 获取值，如果有错误则抛出异常
+    // Get value, throw exception if has error
     const T& value() const {
         if (has_error_) {
             throw *error_;
@@ -142,7 +157,7 @@ public:
         return *value_;
     }
     
-    // 获取错误，如果没有错误则返回成功
+    // Get error, return success if no error
     const Error& error() const {
         if (!has_error_) {
             static const Error success(ErrorCode::SUCCESS);
@@ -157,27 +172,27 @@ private:
     bool has_error_;
 };
 
-// 特化的void结果类，用于不返回值的操作
+// Specialized void result class for operations that don't return a value
 template<>
 class Result<void> {
 public:
-    // 成功构造函数
+    // Success constructor
     Result() : has_error_(false) {}
     
-    // 错误构造函数
+    // Error constructor
     Result(ErrorCode code, const std::string& what_arg)
-        : error_(new Error(code, what_arg)), has_error_(true) {}
+        : error_(std::make_unique<Error>(code, what_arg)), has_error_(true) {}
     
     Result(ErrorCode code)
-        : error_(new Error(code)), has_error_(true) {}
+        : error_(std::make_unique<Error>(code)), has_error_(true) {}
     
     Result(const Error& error)
-        : error_(new Error(error)), has_error_(true) {}
+        : error_(std::make_unique<Error>(error.code(), error.what())), has_error_(true) {}
     
-    // 检查是否有错误
+    // Check if has error
     bool has_error() const { return has_error_; }
     
-    // 获取错误，如果没有错误则返回成功
+    // Get error, return success if no error
     const Error& error() const {
         if (!has_error_) {
             static const Error success(ErrorCode::SUCCESS);
@@ -193,10 +208,10 @@ private:
 
 } // namespace next_gen
 
-// 使std::error_code能够处理我们的ErrorCode
+// Enable std::error_code to handle our ErrorCode
 namespace std {
     template <>
-    struct is_error_code_enum<next_gen::ErrorCode> : true_type {};
+    struct is_error_code_enum<next_gen::ErrorCode> : std::true_type {};
 }
 
 #endif // NEXT_GEN_ERROR_H

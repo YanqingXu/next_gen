@@ -12,40 +12,40 @@
 
 namespace next_gen {
 
-// 消息队列接口
+// Message queue interface
 class NEXT_GEN_API MessageQueue {
 public:
     virtual ~MessageQueue() = default;
     
-    // 推送消息到队列
+    // Push message to queue
     virtual void push(std::unique_ptr<Message> message) = 0;
     
-    // 从队列中弹出消息，如果队列为空则阻塞
+    // Pop message from queue, block if queue is empty
     virtual std::unique_ptr<Message> pop() = 0;
     
-    // 尝试从队列中弹出消息，如果队列为空则返回nullptr
+    // Try to pop message from queue, return nullptr if queue is empty
     virtual std::unique_ptr<Message> tryPop() = 0;
     
-    // 尝试从队列中弹出消息，如果队列为空则等待指定时间
+    // Try to pop message from queue, wait for specified time if queue is empty
     virtual std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) = 0;
     
-    // 获取队列大小
+    // Get queue size
     virtual size_t size() const = 0;
     
-    // 检查队列是否为空
+    // Check if queue is empty
     virtual bool empty() const = 0;
     
-    // 清空队列
+    // Clear queue
     virtual void clear() = 0;
     
-    // 关闭队列
+    // Shutdown queue
     virtual void shutdown() = 0;
     
-    // 检查队列是否已关闭
+    // Check if queue is shutdown
     virtual bool isShutdown() const = 0;
 };
 
-// 默认消息队列实现
+// Default message queue implementation
 class NEXT_GEN_API DefaultMessageQueue : public MessageQueue {
 public:
     DefaultMessageQueue(size_t maxSize = 0) 
@@ -55,119 +55,119 @@ public:
         shutdown();
     }
     
-    // 推送消息到队列
+    // Push message to queue
     void push(std::unique_ptr<Message> message) override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 如果队列已关闭，则丢弃消息
+        // If queue is shutdown, discard message
         if (shutdown_) {
             NEXT_GEN_LOG_WARNING("Attempt to push message to shutdown queue");
             return;
         }
         
-        // 如果队列已满，则等待
+        // If queue is full, wait
         if (max_size_ > 0 && queue_.size() >= max_size_) {
             NEXT_GEN_LOG_WARNING("Message queue is full, waiting for space");
             not_full_.wait(lock, [this] { 
                 return queue_.size() < max_size_ || shutdown_; 
             });
             
-            // 再次检查队列是否已关闭
+            // Check again if queue is shutdown
             if (shutdown_) {
                 NEXT_GEN_LOG_WARNING("Queue shutdown while waiting to push message");
                 return;
             }
         }
         
-        // 推送消息
+        // Push message
         queue_.push(std::move(message));
         
-        // 通知等待的消费者
+        // Notify waiting consumers
         lock.unlock();
         not_empty_.notify_one();
     }
     
-    // 从队列中弹出消息，如果队列为空则阻塞
+    // Pop message from queue, block if queue is empty
     std::unique_ptr<Message> pop() override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 等待队列非空或关闭
+        // Wait for queue to be non-empty or shutdown
         not_empty_.wait(lock, [this] { 
             return !queue_.empty() || shutdown_; 
         });
         
-        // 如果队列已关闭且为空，则返回nullptr
+        // If queue is shutdown and empty, return nullptr
         if (queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
+        // Pop message
         std::unique_ptr<Message> message = std::move(queue_.front());
         queue_.pop();
         
-        // 通知等待的生产者
+        // Notify waiting producers
         lock.unlock();
         not_full_.notify_one();
         
         return message;
     }
     
-    // 尝试从队列中弹出消息，如果队列为空则返回nullptr
+    // Try to pop message from queue, return nullptr if queue is empty
     std::unique_ptr<Message> tryPop() override {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // 如果队列为空，则返回nullptr
+        // If queue is empty, return nullptr
         if (queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
+        // Pop message
         std::unique_ptr<Message> message = std::move(queue_.front());
         queue_.pop();
         
-        // 通知等待的生产者
+        // Notify waiting producers
         not_full_.notify_one();
         
         return message;
     }
     
-    // 尝试从队列中弹出消息，如果队列为空则等待指定时间
+    // Try to pop message from queue, wait for specified time if queue is empty
     std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 等待队列非空或超时
+        // Wait for queue to be non-empty or timeout
         bool success = not_empty_.wait_for(lock, timeout, [this] { 
             return !queue_.empty() || shutdown_; 
         });
         
-        // 如果超时或队列为空，则返回nullptr
+        // If timeout or queue is empty, return nullptr
         if (!success || queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
+        // Pop message
         std::unique_ptr<Message> message = std::move(queue_.front());
         queue_.pop();
         
-        // 通知等待的生产者
+        // Notify waiting producers
         not_full_.notify_one();
         
         return message;
     }
     
-    // 获取队列大小
+    // Get queue size
     size_t size() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return queue_.size();
     }
     
-    // 检查队列是否为空
+    // Check if queue is empty
     bool empty() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return queue_.empty();
     }
     
-    // 清空队列
+    // Clear queue
     void clear() override {
         std::lock_guard<std::mutex> lock(mutex_);
         std::queue<std::unique_ptr<Message>> empty;
@@ -175,7 +175,7 @@ public:
         not_full_.notify_all();
     }
     
-    // 关闭队列
+    // Shutdown queue
     void shutdown() override {
         std::lock_guard<std::mutex> lock(mutex_);
         shutdown_ = true;
@@ -183,7 +183,7 @@ public:
         not_full_.notify_all();
     }
     
-    // 检查队列是否已关闭
+    // Check if queue is shutdown
     bool isShutdown() const override {
         return shutdown_;
     }
@@ -197,7 +197,7 @@ private:
     std::atomic<bool> shutdown_;
 };
 
-// 优先级消息队列实现
+// Priority message queue implementation
 class NEXT_GEN_API PriorityMessageQueue : public MessageQueue {
 public:
     PriorityMessageQueue(size_t maxSize = 0) 
@@ -207,122 +207,125 @@ public:
         shutdown();
     }
     
-    // 推送消息到队列
+    // Push message to queue
     void push(std::unique_ptr<Message> message) override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 如果队列已关闭，则丢弃消息
+        // If queue is shutdown, discard message
         if (shutdown_) {
             NEXT_GEN_LOG_WARNING("Attempt to push message to shutdown queue");
             return;
         }
         
-        // 如果队列已满，则等待
+        // If queue is full, wait
         if (max_size_ > 0 && queue_.size() >= max_size_) {
             NEXT_GEN_LOG_WARNING("Message queue is full, waiting for space");
             not_full_.wait(lock, [this] { 
                 return queue_.size() < max_size_ || shutdown_; 
             });
             
-            // 再次检查队列是否已关闭
+            // Check again if queue is shutdown
             if (shutdown_) {
                 NEXT_GEN_LOG_WARNING("Queue shutdown while waiting to push message");
                 return;
             }
         }
         
-        // 计算优先级 (可以根据消息类型或其他因素调整)
+        // Calculate priority (can be adjusted based on message type or other factors)
         int priority = calculatePriority(*message);
         
-        // 推送消息
+        // Push message
         queue_.push(std::make_pair(priority, std::move(message)));
         
-        // 通知等待的消费者
+        // Notify waiting consumers
         lock.unlock();
         not_empty_.notify_one();
     }
     
-    // 从队列中弹出消息，如果队列为空则阻塞
+    // Pop message from queue, block if queue is empty
     std::unique_ptr<Message> pop() override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 等待队列非空或关闭
+        // Wait for queue to be non-empty or shutdown
         not_empty_.wait(lock, [this] { 
             return !queue_.empty() || shutdown_; 
         });
         
-        // 如果队列已关闭且为空，则返回nullptr
+        // If queue is shutdown and empty, return nullptr
         if (queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
-        std::unique_ptr<Message> message = std::move(queue_.top().second);
+        // Pop message
+        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
         queue_.pop();
+        std::unique_ptr<Message> message = std::move(top.second);
         
-        // 通知等待的生产者
+        // Notify waiting producers
         lock.unlock();
         not_full_.notify_one();
         
         return message;
     }
     
-    // 尝试从队列中弹出消息，如果队列为空则返回nullptr
+    // Try to pop message from queue, return nullptr if queue is empty
     std::unique_ptr<Message> tryPop() override {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // 如果队列为空，则返回nullptr
+        // If queue is empty, return nullptr
         if (queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
-        std::unique_ptr<Message> message = std::move(queue_.top().second);
+        // Pop message
+        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
         queue_.pop();
+        std::unique_ptr<Message> message = std::move(top.second);
         
-        // 通知等待的生产者
+        // Notify waiting producers
         not_full_.notify_one();
         
         return message;
     }
     
-    // 尝试从队列中弹出消息，如果队列为空则等待指定时间
+    // Try to pop message from queue, wait for specified time if queue is empty
     std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override {
         std::unique_lock<std::mutex> lock(mutex_);
         
-        // 等待队列非空或超时
+        // Wait for queue to be non-empty or timeout
         bool success = not_empty_.wait_for(lock, timeout, [this] { 
             return !queue_.empty() || shutdown_; 
         });
         
-        // 如果超时或队列为空，则返回nullptr
+        // If timeout or queue is empty, return nullptr
         if (!success || queue_.empty()) {
             return nullptr;
         }
         
-        // 弹出消息
-        std::unique_ptr<Message> message = std::move(queue_.top().second);
+        // Pop message
+        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
         queue_.pop();
+        std::unique_ptr<Message> message = std::move(top.second);
         
-        // 通知等待的生产者
+        // Notify waiting producers
         not_full_.notify_one();
         
         return message;
     }
     
-    // 获取队列大小
+    // Get queue size
     size_t size() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return queue_.size();
     }
     
-    // 检查队列是否为空
+    // Check if queue is empty
     bool empty() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return queue_.empty();
     }
     
-    // 清空队列
+    // Clear queue
     void clear() override {
         std::lock_guard<std::mutex> lock(mutex_);
         std::priority_queue<
@@ -334,7 +337,7 @@ public:
         not_full_.notify_all();
     }
     
-    // 关闭队列
+    // Shutdown queue
     void shutdown() override {
         std::lock_guard<std::mutex> lock(mutex_);
         shutdown_ = true;
@@ -342,21 +345,21 @@ public:
         not_full_.notify_all();
     }
     
-    // 检查队列是否已关闭
+    // Check if queue is shutdown
     bool isShutdown() const override {
         return shutdown_;
     }
     
 protected:
-    // 计算消息优先级 (可以在子类中重写)
+    // Calculate message priority (can be overridden in subclasses)
     virtual int calculatePriority(const Message& message) const {
-        // 默认实现：根据消息类别计算优先级
-        // 可以根据需要调整优先级计算方式
+        // Default implementation: calculate priority based on message category
+        // Priority calculation can be adjusted as needed
         return static_cast<int>(message.getCategory());
     }
     
 private:
-    // 优先级比较器
+    // Priority comparator
     struct PriorityCompare {
         bool operator()(
             const std::pair<int, std::unique_ptr<Message>>& a,

@@ -2,36 +2,37 @@
 #include <memory>
 #include <thread>
 #include <chrono>
-#include <next_gen/core/service.h>
-#include <next_gen/module/module.h>
-#include <next_gen/message/message.h>
-#include <next_gen/message/message_queue.h>
-#include <next_gen/utils/logger.h>
-#include <next_gen/utils/timer.h>
+#include "../include/core/service.h"
+#include "../include/module/module_impl.h"
+#include "../include/module/module.h"
+#include "../include/message/message.h"
+#include "../include/message/message_queue.h"
+#include "../include/utils/logger.h"
+#include "../include/utils/timer.h"
 
 using namespace next_gen;
 
-// 自定义消息类型
+// Custom message types
 enum class CustomMessageCategory : MessageCategoryType {
     SYSTEM = 1,
     USER = 2
 };
 
-// 系统消息ID
+// System message IDs
 enum class SystemMessageId : MessageIdType {
     PING = 1,
     PONG = 2,
     SHUTDOWN = 3
 };
 
-// 用户消息ID
+// User message IDs
 enum class UserMessageId : MessageIdType {
     LOGIN = 1,
     LOGOUT = 2,
     CHAT = 3
 };
 
-// Ping消息
+// Ping message
 class PingMessage : public Message {
 public:
     static constexpr MessageCategoryType CATEGORY = static_cast<MessageCategoryType>(CustomMessageCategory::SYSTEM);
@@ -39,7 +40,7 @@ public:
     
     PingMessage() : Message(CATEGORY, ID) {}
     
-    // 序列化
+    // Serialize
     Result<std::vector<u8>> serialize() const override {
         std::vector<u8> data;
         data.push_back(static_cast<u8>(timestamp_ >> 56));
@@ -53,7 +54,7 @@ public:
         return Result<std::vector<u8>>(data);
     }
     
-    // 反序列化
+    // Deserialize
     Result<void> deserialize(const std::vector<u8>& data) override {
         if (data.size() < 8) {
             return Result<void>(ErrorCode::MESSAGE_ERROR, "Invalid data size");
@@ -71,7 +72,7 @@ public:
     }
 };
 
-// Pong消息
+// Pong message
 class PongMessage : public Message {
 public:
     static constexpr MessageCategoryType CATEGORY = static_cast<MessageCategoryType>(CustomMessageCategory::SYSTEM);
@@ -79,7 +80,7 @@ public:
     
     PongMessage() : Message(CATEGORY, ID) {}
     
-    // 序列化
+    // Serialize
     Result<std::vector<u8>> serialize() const override {
         std::vector<u8> data;
         data.push_back(static_cast<u8>(timestamp_ >> 56));
@@ -93,7 +94,7 @@ public:
         return Result<std::vector<u8>>(data);
     }
     
-    // 反序列化
+    // Deserialize
     Result<void> deserialize(const std::vector<u8>& data) override {
         if (data.size() < 8) {
             return Result<void>(ErrorCode::MESSAGE_ERROR, "Invalid data size");
@@ -111,7 +112,7 @@ public:
     }
 };
 
-// 关闭消息
+// Shutdown message
 class ShutdownMessage : public Message {
 public:
     static constexpr MessageCategoryType CATEGORY = static_cast<MessageCategoryType>(CustomMessageCategory::SYSTEM);
@@ -119,18 +120,18 @@ public:
     
     ShutdownMessage() : Message(CATEGORY, ID) {}
     
-    // 序列化
+    // Serialize
     Result<std::vector<u8>> serialize() const override {
         return Result<std::vector<u8>>(std::vector<u8>());
     }
     
-    // 反序列化
+    // Deserialize
     Result<void> deserialize(const std::vector<u8>& data) override {
         return Result<void>();
     }
 };
 
-// 心跳模块
+// Heartbeat module
 class HeartbeatModule : public BaseModule<HeartbeatModule> {
 public:
     NEXT_GEN_DEFINE_MODULE(Heartbeat)
@@ -143,11 +144,11 @@ public:
         }
     }
     
-    // 初始化模块
+    // Initialize module
     Result<void> init() override {
         NEXT_GEN_LOG_INFO("Initializing heartbeat module");
         
-        // 注册消息处理器
+        // Register message handlers
         auto result = registerMessageHandler<PingMessage>([this](const PingMessage& message) {
             handlePing(message);
         });
@@ -178,11 +179,11 @@ public:
         return Result<void>();
     }
     
-    // 启动模块
+    // Start module
     Result<void> start() override {
         NEXT_GEN_LOG_INFO("Starting heartbeat module");
         
-        // 启动心跳定时器
+        // Start heartbeat timer
         timer_id_ = Timer::repeat(1000, 5000, [this]() {
             sendPing();
         });
@@ -190,11 +191,11 @@ public:
         return Result<void>();
     }
     
-    // 停止模块
+    // Stop module
     Result<void> stop() override {
         NEXT_GEN_LOG_INFO("Stopping heartbeat module");
         
-        // 取消心跳定时器
+        // Cancel heartbeat timer
         if (timer_id_ != 0) {
             Timer::cancel(timer_id_);
             timer_id_ = 0;
@@ -204,7 +205,7 @@ public:
     }
     
 private:
-    // 发送Ping消息
+    // Send Ping message
     void sendPing() {
         NEXT_GEN_LOG_DEBUG("Sending ping message");
         
@@ -215,11 +216,11 @@ private:
         }
     }
     
-    // 处理Ping消息
+    // Handle Ping message
     void handlePing(const PingMessage& message) {
         NEXT_GEN_LOG_DEBUG("Received ping message, timestamp: " + std::to_string(message.getTimestamp()));
         
-        // 回复Pong消息
+        // Reply with Pong message
         auto pong = std::make_unique<PongMessage>();
         auto service = getService();
         if (service) {
@@ -227,12 +228,12 @@ private:
         }
     }
     
-    // 处理Pong消息
+    // Handle Pong message
     void handlePong(const PongMessage& message) {
         NEXT_GEN_LOG_DEBUG("Received pong message, timestamp: " + std::to_string(message.getTimestamp()));
     }
     
-    // 处理关闭消息
+    // Handle Shutdown message
     void handleShutdown(const ShutdownMessage& message) {
         NEXT_GEN_LOG_INFO("Received shutdown message");
         
@@ -245,16 +246,16 @@ private:
     TimerId timer_id_;
 };
 
-// 示例服务
+// Example service
 class ExampleService : public BaseService {
 public:
     ExampleService() : BaseService("ExampleService") {}
     
-    // 初始化服务
+    // Initialize service
     Result<void> onInit() override {
         NEXT_GEN_LOG_INFO("Initializing example service");
         
-        // 注册心跳模块
+        // Register heartbeat module
         auto heartbeat = ModuleFactory::createModule<HeartbeatModule>(shared_from_this());
         if (!heartbeat) {
             return Result<void>(ErrorCode::MODULE_ERROR, "Failed to create heartbeat module");
@@ -263,11 +264,11 @@ public:
         return Result<void>();
     }
     
-    // 启动服务
+    // Start service
     Result<void> onStart() override {
         NEXT_GEN_LOG_INFO("Starting example service");
         
-        // 启动关闭定时器
+        // Start shutdown timer
         Timer::once(30000, [this]() {
             NEXT_GEN_LOG_INFO("Sending shutdown message");
             auto message = std::make_unique<ShutdownMessage>();
@@ -277,7 +278,7 @@ public:
         return Result<void>();
     }
     
-    // 停止服务
+    // Stop service
     Result<void> onStop() override {
         NEXT_GEN_LOG_INFO("Stopping example service");
         return Result<void>();
@@ -285,30 +286,30 @@ public:
 };
 
 int main() {
-    // 初始化日志系统
+    // Initialize logging system
     LogManager::instance().addSink(std::make_shared<ConsoleSink>(LogLevel::DEBUG));
     LogManager::instance().addSink(std::make_shared<FileSink>("example_service.log", LogLevel::INFO));
     
     NEXT_GEN_LOG_INFO("Starting example service application");
     
-    // 创建服务
+    // Create service
     auto service = std::make_shared<ExampleService>();
     
-    // 初始化服务
+    // Initialize service
     auto result = service->init();
     if (result.has_error()) {
         NEXT_GEN_LOG_ERROR("Failed to initialize service: " + result.error().message());
         return 1;
     }
     
-    // 启动服务
+    // Start service
     result = service->start();
     if (result.has_error()) {
         NEXT_GEN_LOG_ERROR("Failed to start service: " + result.error().message());
         return 1;
     }
     
-    // 等待服务结束
+    // Wait for service to finish
     service->wait();
     
     NEXT_GEN_LOG_INFO("Example service application stopped");

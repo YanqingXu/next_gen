@@ -3,42 +3,45 @@
 
 #include <string>
 #include <memory>
-#include "../core/service.h"
 #include "../utils/error.h"
+#include "module_interface.h"
 
 namespace next_gen {
 
-// 模块接口
-class NEXT_GEN_API Module : public std::enable_shared_from_this<Module> {
+// Forward declaration of Service class
+class Service;
+
+// Module interface
+class NEXT_GEN_API Module : public ModuleInterface, public std::enable_shared_from_this<Module> {
 public:
     Module(std::weak_ptr<Service> service) : service_(service) {}
     
     virtual ~Module() = default;
     
-    // 获取模块名称
+    // Get module name
     virtual std::string getName() const = 0;
     
-    // 初始化模块
+    // Initialize module
     virtual Result<void> init() {
         return Result<void>();
     }
     
-    // 启动模块
+    // Start module
     virtual Result<void> start() {
         return Result<void>();
     }
     
-    // 停止模块
+    // Stop module
     virtual Result<void> stop() {
         return Result<void>();
     }
     
-    // 更新模块
+    // Update module
     virtual Result<void> update(u64 elapsed_ms) {
         return Result<void>();
     }
     
-    // 注册消息处理器
+    // Register message handler
     template<typename T, typename Handler>
     Result<void> registerMessageHandler(Handler&& handler) {
         static_assert(std::is_base_of<Message, T>::value, "T must be derived from Message");
@@ -55,37 +58,28 @@ public:
         );
     }
     
-    // 发送消息
-    Result<void> postMessage(std::unique_ptr<Message> message) {
-        auto service = service_.lock();
-        if (!service) {
-            return Result<void>(ErrorCode::SERVICE_ERROR, "Service not available");
-        }
-        
-        return service->postMessage(std::move(message));
-    }
+    // Post message
+    Result<void> postMessage(std::unique_ptr<Message> message);
     
-    // 获取服务
-    std::shared_ptr<Service> getService() const {
-        return service_.lock();
-    }
+    // Get service
+    std::shared_ptr<Service> getService();
     
 protected:
     std::weak_ptr<Service> service_;
 };
 
-// 基础模块实现
+// Base module implementation
 template<typename ModuleType>
 class NEXT_GEN_API BaseModule : public Module {
 public:
     BaseModule(std::weak_ptr<Service> service) : Module(service) {}
     
-    // 获取模块名称
+    // Get module name
     std::string getName() const override {
         return ModuleType::MODULE_NAME;
     }
     
-    // 获取模块实例
+    // Get module instance
     static std::shared_ptr<ModuleType> getInstance(std::shared_ptr<Service> service) {
         auto module = std::make_shared<ModuleType>(service);
         auto result = service->registerModule(module);
@@ -98,10 +92,10 @@ public:
     }
 };
 
-// 模块工厂
+// Module factory
 class NEXT_GEN_API ModuleFactory {
 public:
-    // 创建并注册模块
+    // Create and register module
     template<typename ModuleType, typename... Args>
     static std::shared_ptr<ModuleType> createModule(std::shared_ptr<Service> service, Args&&... args) {
         static_assert(std::is_base_of<Module, ModuleType>::value, "ModuleType must be derived from Module");
@@ -127,7 +121,7 @@ public:
 
 } // namespace next_gen
 
-// 便捷宏，用于定义模块
+// Convenience macro for defining modules
 #define NEXT_GEN_DEFINE_MODULE(ModuleName) \
     static constexpr const char* MODULE_NAME = #ModuleName;
 

@@ -15,7 +15,7 @@
 
 namespace next_gen {
 
-// 日志级别
+// Log levels
 enum class LogLevel {
     TRACE,
     DEBUG,
@@ -25,7 +25,7 @@ enum class LogLevel {
     FATAL
 };
 
-// 日志级别转字符串
+// Convert log level to string
 inline const char* logLevelToString(LogLevel level) {
     switch (level) {
         case LogLevel::TRACE: return "TRACE";
@@ -38,7 +38,7 @@ inline const char* logLevelToString(LogLevel level) {
     }
 }
 
-// 日志记录
+// Log record
 struct LogRecord {
     std::chrono::system_clock::time_point time;
     LogLevel level;
@@ -49,46 +49,50 @@ struct LogRecord {
     std::thread::id thread_id;
 };
 
-// 日志接收器接口
+// Log sink interface
 class LogSink {
 public:
     virtual ~LogSink() = default;
     virtual void log(const LogRecord& record) = 0;
 };
 
-// 控制台日志接收器
+// Console log sink
 class ConsoleSink : public LogSink {
 public:
     void log(const LogRecord& record) override {
         std::stringstream ss;
         
-        // 格式化时间
+        // Format time
         auto time_t = std::chrono::system_clock::to_time_t(record.time);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             record.time.time_since_epoch() % std::chrono::seconds(1)).count();
-        ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") 
+        
+        // Use localtime_s instead of localtime for thread safety
+        std::tm tm_info;
+        localtime_s(&tm_info, &time_t);
+        ss << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S") 
            << "." << std::setfill('0') << std::setw(3) << ms << " ";
         
-        // 添加日志级别
+        // Add log level
         ss << "[" << logLevelToString(record.level) << "] ";
         
-        // 添加线程ID
+        // Add thread ID
         ss << "[" << record.thread_id << "] ";
         
-        // 添加文件和行号
+        // Add file and line number
         if (!record.file.empty()) {
             ss << "[" << record.file << ":" << record.line << "] ";
         }
         
-        // 添加函数名
+        // Add function name
         if (!record.function.empty()) {
             ss << "[" << record.function << "] ";
         }
         
-        // 添加消息
+        // Add message
         ss << record.message;
         
-        // 输出到控制台
+        // Output to console
         if (record.level >= LogLevel::ERROR) {
             std::cerr << ss.str() << std::endl;
         } else {
@@ -97,7 +101,7 @@ public:
     }
 };
 
-// 文件日志接收器
+// File log sink
 class FileSink : public LogSink {
 public:
     FileSink(const std::string& filename) : filename_(filename) {
@@ -120,33 +124,35 @@ public:
         
         std::stringstream ss;
         
-        // 格式化时间
+        // Format time
         auto time_t = std::chrono::system_clock::to_time_t(record.time);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             record.time.time_since_epoch() % std::chrono::seconds(1)).count();
-        ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") 
+        std::tm tm_info;
+        localtime_s(&tm_info, &time_t);
+        ss << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S") 
            << "." << std::setfill('0') << std::setw(3) << ms << " ";
         
-        // 添加日志级别
+        // Add log level
         ss << "[" << logLevelToString(record.level) << "] ";
         
-        // 添加线程ID
+        // Add thread ID
         ss << "[" << record.thread_id << "] ";
         
-        // 添加文件和行号
+        // Add file and line number
         if (!record.file.empty()) {
             ss << "[" << record.file << ":" << record.line << "] ";
         }
         
-        // 添加函数名
+        // Add function name
         if (!record.function.empty()) {
             ss << "[" << record.function << "] ";
         }
         
-        // 添加消息
+        // Add message
         ss << record.message;
         
-        // 输出到文件
+        // Output to file
         file_ << ss.str() << std::endl;
         file_.flush();
     }
@@ -156,31 +162,31 @@ private:
     std::ofstream file_;
 };
 
-// 日志管理器
-class NEXT_GEN_API Logger {
+// Logger manager
+class Logger {
 public:
     static Logger& instance() {
         static Logger instance;
         return instance;
     }
     
-    // 添加日志接收器
+    // Add log sink
     void addSink(std::shared_ptr<LogSink> sink) {
         std::lock_guard<std::mutex> lock(mutex_);
         sinks_.push_back(sink);
     }
     
-    // 设置日志级别
+    // Set log level
     void setLevel(LogLevel level) {
         level_ = level;
     }
     
-    // 获取日志级别
+    // Get log level
     LogLevel getLevel() const {
         return level_;
     }
     
-    // 记录日志
+    // Log message
     void log(LogLevel level, const std::string& message, 
              const std::string& file = "", int line = 0, 
              const std::string& function = "") {
@@ -203,7 +209,7 @@ public:
         }
     }
     
-    // 便捷日志方法
+    // Convenience logging methods
     void trace(const std::string& message, 
                const std::string& file = "", int line = 0, 
                const std::string& function = "") {
@@ -242,7 +248,7 @@ public:
     
 private:
     Logger() {
-        // 默认添加控制台接收器
+        // Add console sink by default
         addSink(std::make_shared<ConsoleSink>());
         level_ = LogLevel::INFO;
     }
@@ -259,7 +265,7 @@ private:
 
 } // namespace next_gen
 
-// 便捷宏
+// Convenience logging macros
 #define NEXT_GEN_LOG_TRACE(message) \
     next_gen::Logger::instance().trace(message, __FILE__, __LINE__, __FUNCTION__)
 

@@ -15,55 +15,53 @@
 #include "../message/message_queue.h"
 #include "../utils/logger.h"
 #include "../utils/error.h"
+#include "../module/module_interface.h"
 
 namespace next_gen {
 
-// 前向声明
-class Module;
-
-// 服务接口
+// Service interface
 class NEXT_GEN_API Service {
 public:
     virtual ~Service() = default;
     
-    // 初始化服务
+    // Initialize service
     virtual Result<void> init() = 0;
     
-    // 启动服务
+    // Start service
     virtual Result<void> start() = 0;
     
-    // 停止服务
+    // Stop service
     virtual Result<void> stop() = 0;
     
-    // 等待服务结束
+    // Wait for service to end
     virtual Result<void> wait() = 0;
     
-    // 发送消息到服务
+    // Post message to service
     virtual Result<void> postMessage(std::unique_ptr<Message> message) = 0;
     
-    // 分发消息
+    // Dispatch message
     virtual Result<void> dispatchMessage(const Message& message) = 0;
     
-    // 注册消息处理器
+    // Register message handler
     virtual Result<void> registerMessageHandler(
         MessageCategoryType category,
         MessageIdType id,
         std::unique_ptr<MessageHandler> handler) = 0;
     
-    // 注册模块
-    virtual Result<void> registerModule(std::shared_ptr<Module> module) = 0;
+    // Register module
+    virtual Result<void> registerModule(std::shared_ptr<ModuleInterface> module) = 0;
     
-    // 获取模块
-    virtual std::shared_ptr<Module> getModule(const std::string& name) = 0;
+    // Get module by name
+    virtual std::shared_ptr<ModuleInterface> getModule(const std::string& name) = 0;
     
-    // 获取服务名称
+    // Get service name
     virtual std::string getName() const = 0;
     
-    // 获取服务状态
+    // Check if service is running
     virtual bool isRunning() const = 0;
 };
 
-// 基础服务实现
+// Base service implementation
 class NEXT_GEN_API BaseService : public Service {
 public:
     BaseService(const std::string& name, std::shared_ptr<MessageQueue> queue = nullptr)
@@ -77,20 +75,20 @@ public:
         }
     }
     
-    // 初始化服务
+    // Initialize service
     Result<void> init() override {
         NEXT_GEN_LOG_INFO("Initializing service: " + name_);
         
-        // 初始化消息队列
+        // Initialize message queue
         if (message_queue_->isShutdown()) {
             return Result<void>(ErrorCode::SERVICE_ERROR, "Message queue is shutdown");
         }
         
-        // 调用子类初始化
+        // Call subclass initialization
         auto result = onInit();
         if (result.has_error()) {
             NEXT_GEN_LOG_ERROR("Failed to initialize service: " + name_ + ", error: " + 
-                              result.error().message());
+                              result.error().what());
             return result;
         }
         
@@ -98,26 +96,26 @@ public:
         return Result<void>();
     }
     
-    // 启动服务
+    // Start service
     Result<void> start() override {
         NEXT_GEN_LOG_INFO("Starting service: " + name_);
         
-        // 检查服务是否已经运行
+        // Check if service is already running
         if (running_) {
             return Result<void>(ErrorCode::SERVICE_ALREADY_STARTED, "Service already started");
         }
         
-        // 设置运行标志
+        // Set running flag
         running_ = true;
         
-        // 启动工作线程
+        // Start worker thread
         worker_thread_ = std::thread(&BaseService::run, this);
         
-        // 调用子类启动
+        // Call subclass start
         auto result = onStart();
         if (result.has_error()) {
             NEXT_GEN_LOG_ERROR("Failed to start service: " + name_ + ", error: " + 
-                              result.error().message());
+                              result.error().what());
             running_ = false;
             if (worker_thread_.joinable()) {
                 worker_thread_.join();
@@ -129,30 +127,30 @@ public:
         return Result<void>();
     }
     
-    // 停止服务
+    // Stop service
     Result<void> stop() override {
         NEXT_GEN_LOG_INFO("Stopping service: " + name_);
         
-        // 检查服务是否正在运行
+        // Check if service is running
         if (!running_) {
             return Result<void>(ErrorCode::SERVICE_NOT_STARTED, "Service not started");
         }
         
-        // 设置运行标志
+        // Set running flag
         running_ = false;
         
-        // 关闭消息队列
+        // Shutdown message queue
         message_queue_->shutdown();
         
-        // 调用子类停止
+        // Call subclass stop
         auto result = onStop();
         if (result.has_error()) {
             NEXT_GEN_LOG_ERROR("Failed to stop service: " + name_ + ", error: " + 
-                              result.error().message());
+                              result.error().what());
             return result;
         }
         
-        // 等待工作线程结束
+        // Wait for worker thread to finish
         if (worker_thread_.joinable()) {
             worker_thread_.join();
         }
@@ -161,7 +159,7 @@ public:
         return Result<void>();
     }
     
-    // 等待服务结束
+    // Wait for service to end
     Result<void> wait() override {
         if (worker_thread_.joinable()) {
             worker_thread_.join();
@@ -169,42 +167,42 @@ public:
         return Result<void>();
     }
     
-    // 发送消息到服务
+    // Post message to service
     Result<void> postMessage(std::unique_ptr<Message> message) override {
-        // 检查服务是否正在运行
+        // Check if service is running
         if (!running_) {
             return Result<void>(ErrorCode::SERVICE_NOT_STARTED, "Service not started");
         }
         
-        // 设置消息时间戳
+        // Set message timestamp
         message->setTimestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
         
-        // 发送消息到队列
+        // Post message to queue
         message_queue_->push(std::move(message));
         
         return Result<void>();
     }
     
-    // 分发消息
+    // Dispatch message
     Result<void> dispatchMessage(const Message& message) override {
-        // 获取消息处理器
+        // Get message handler
         auto key = makeHandlerKey(message.getCategory(), message.getId());
         auto it = message_handlers_.find(key);
         if (it != message_handlers_.end()) {
-            // 处理消息
+            // Handle message
             it->second->handleMessage(message);
             return Result<void>();
         }
         
-        // 未找到处理器
+        // No handler found
         NEXT_GEN_LOG_WARNING("No handler for message: category=" + 
                            std::to_string(message.getCategory()) + 
                            ", id=" + std::to_string(message.getId()));
         return Result<void>(ErrorCode::MESSAGE_ERROR, "No handler for message");
     }
     
-    // 注册消息处理器
+    // Register message handler
     Result<void> registerMessageHandler(
         MessageCategoryType category,
         MessageIdType id,
@@ -214,7 +212,7 @@ public:
         return Result<void>();
     }
     
-    // 便捷的消息处理器注册模板方法
+    // Register message handler template method
     template<typename T, typename Handler>
     Result<void> registerMessageHandler(Handler&& handler) {
         static_assert(std::is_base_of<Message, T>::value, "T must be derived from Message");
@@ -225,13 +223,12 @@ public:
         );
     }
     
-    // 注册模块
-    Result<void> registerModule(std::shared_ptr<Module> module) override {
+    // Register module with explicit name
+    Result<void> registerModuleWithName(const std::string& name, std::shared_ptr<ModuleInterface> module) {
         if (!module) {
             return Result<void>(ErrorCode::INVALID_ARGUMENT, "Module is null");
         }
         
-        std::string name = module->getName();
         if (modules_.find(name) != modules_.end()) {
             return Result<void>(ErrorCode::MODULE_ALREADY_EXISTS, "Module already exists: " + name);
         }
@@ -240,8 +237,28 @@ public:
         return Result<void>();
     }
     
-    // 获取模块
-    std::shared_ptr<Module> getModule(const std::string& name) override {
+    // Register module
+    Result<void> registerModule(std::shared_ptr<ModuleInterface> module) override {
+        if (!module) {
+            return Result<void>(ErrorCode::INVALID_ARGUMENT, "Module is null");
+        }
+        
+        // 使用临时变量存储模块名称
+        std::string name;
+        
+        // 使用try-catch块捕获任何可能的异常
+        try {
+            name = module->getName();
+        } catch (const std::exception& e) {
+            return Result<void>(ErrorCode::INVALID_ARGUMENT, 
+                std::string("Failed to get module name: ") + e.what());
+        }
+        
+        return registerModuleWithName(name, module);
+    }
+    
+    // Get module by name
+    std::shared_ptr<ModuleInterface> getModule(const std::string& name) override {
         auto it = modules_.find(name);
         if (it != modules_.end()) {
             return it->second;
@@ -249,51 +266,51 @@ public:
         return nullptr;
     }
     
-    // 获取服务名称
+    // Get service name
     std::string getName() const override {
         return name_;
     }
     
-    // 获取服务状态
+    // Check if service is running
     bool isRunning() const override {
         return running_;
     }
     
 protected:
-    // 子类初始化方法
+    // Subclass initialization method
     virtual Result<void> onInit() {
         return Result<void>();
     }
     
-    // 子类启动方法
+    // Subclass start method
     virtual Result<void> onStart() {
         return Result<void>();
     }
     
-    // 子类停止方法
+    // Subclass stop method
     virtual Result<void> onStop() {
         return Result<void>();
     }
     
-    // 消息处理方法
+    // Message handling method
     virtual Result<void> onMessage(const Message& message) {
         return dispatchMessage(message);
     }
     
-    // 更新方法
+    // Update method
     virtual Result<void> onUpdate(u64 elapsed_ms) {
         return Result<void>();
     }
     
 private:
-    // 主运行循环
+    // Main run loop
     void run() {
         NEXT_GEN_LOG_INFO("Service worker thread started: " + name_);
         
         auto last_update_time = std::chrono::steady_clock::now();
         
         while (running_) {
-            // 处理消息
+            // Process messages
             auto message = message_queue_->waitAndPop(std::chrono::milliseconds(100));
             if (message) {
                 try {
@@ -305,18 +322,18 @@ private:
                 }
             }
             
-            // 计算经过的时间
+            // Calculate elapsed time
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update_time);
             
-            // 调用更新方法
+            // Call update method
             if (elapsed.count() > 0) {
                 try {
                     onUpdate(elapsed.count());
                 } catch (const std::exception& e) {
-                    NEXT_GEN_LOG_ERROR("Exception in onUpdate: " + std::string(e.what()));
+                    NEXT_GEN_LOG_ERROR("Exception in update: " + std::string(e.what()));
                 } catch (...) {
-                    NEXT_GEN_LOG_ERROR("Unknown exception in onUpdate");
+                    NEXT_GEN_LOG_ERROR("Unknown exception in update");
                 }
                 last_update_time = now;
             }
@@ -325,7 +342,7 @@ private:
         NEXT_GEN_LOG_INFO("Service worker thread stopped: " + name_);
     }
     
-    // 创建处理器键
+    // Create handler key
     static u32 makeHandlerKey(MessageCategoryType category, MessageIdType id) {
         return (static_cast<u32>(category) << 16) | static_cast<u32>(id);
     }
@@ -335,7 +352,7 @@ private:
     std::thread worker_thread_;
     std::shared_ptr<MessageQueue> message_queue_;
     std::unordered_map<u32, std::unique_ptr<MessageHandler>> message_handlers_;
-    std::unordered_map<std::string, std::shared_ptr<Module>> modules_;
+    std::unordered_map<std::string, std::shared_ptr<ModuleInterface>> modules_;
 };
 
 } // namespace next_gen
