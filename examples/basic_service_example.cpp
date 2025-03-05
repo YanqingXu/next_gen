@@ -140,7 +140,7 @@ public:
     
     ~HeartbeatModule() {
         if (timer_id_ != 0) {
-            Timer::cancel(timer_id_);
+            TimerManager::instance().cancel(timer_id_);
         }
     }
     
@@ -184,7 +184,7 @@ public:
         NEXT_GEN_LOG_INFO("Starting heartbeat module");
         
         // Start heartbeat timer
-        timer_id_ = Timer::repeat(1000, 5000, [this]() {
+        timer_id_ =  repeat(1000, 5000, [this]() {
             sendPing();
         });
         
@@ -197,10 +197,16 @@ public:
         
         // Cancel heartbeat timer
         if (timer_id_ != 0) {
-            Timer::cancel(timer_id_);
+            TimerManager::instance().cancel(timer_id_);
             timer_id_ = 0;
         }
         
+        return Result<void>();
+    }
+    
+    // Handle message - required implementation from ModuleInterface
+    Result<void> handleMessage(const Message& message) override {
+        // 可以进行消息分类处理或直接返回成功
         return Result<void>();
     }
     
@@ -247,7 +253,7 @@ private:
 };
 
 // Example service
-class ExampleService : public BaseService {
+class ExampleService : public BaseService, public std::enable_shared_from_this<ExampleService> {
 public:
     ExampleService() : BaseService("ExampleService") {}
     
@@ -269,7 +275,7 @@ public:
         NEXT_GEN_LOG_INFO("Starting example service");
         
         // Start shutdown timer
-        Timer::once(30000, [this]() {
+        once(30000, [this]() {
             NEXT_GEN_LOG_INFO("Sending shutdown message");
             auto message = std::make_unique<ShutdownMessage>();
             postMessage(std::move(message));
@@ -287,8 +293,11 @@ public:
 
 int main() {
     // Initialize logging system
-    LogManager::instance().addSink(std::make_shared<ConsoleSink>(LogLevel::DEBUG));
-    LogManager::instance().addSink(std::make_shared<FileSink>("example_service.log", LogLevel::INFO));
+    Logger::instance().addSink(std::make_shared<ConsoleSink>());
+    Logger::instance().addSink(std::make_shared<FileSink>("example_service.log"));
+    
+    // 单独设置日志级别
+    Logger::instance().setLevel(LogLevel::DEBUG);
     
     NEXT_GEN_LOG_INFO("Starting example service application");
     

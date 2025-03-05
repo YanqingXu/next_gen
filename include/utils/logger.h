@@ -11,6 +11,7 @@
 #include <chrono>
 #include <iomanip>
 #include <functional>
+#include <thread>
 #include "../core/config.h"
 
 namespace next_gen {
@@ -59,103 +60,16 @@ public:
 // Console log sink
 class ConsoleSink : public LogSink {
 public:
-    void log(const LogRecord& record) override {
-        std::stringstream ss;
-        
-        // Format time
-        auto time_t = std::chrono::system_clock::to_time_t(record.time);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            record.time.time_since_epoch() % std::chrono::seconds(1)).count();
-        
-        // Use localtime_s instead of localtime for thread safety
-        std::tm tm_info;
-        localtime_s(&tm_info, &time_t);
-        ss << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S") 
-           << "." << std::setfill('0') << std::setw(3) << ms << " ";
-        
-        // Add log level
-        ss << "[" << logLevelToString(record.level) << "] ";
-        
-        // Add thread ID
-        ss << "[" << record.thread_id << "] ";
-        
-        // Add file and line number
-        if (!record.file.empty()) {
-            ss << "[" << record.file << ":" << record.line << "] ";
-        }
-        
-        // Add function name
-        if (!record.function.empty()) {
-            ss << "[" << record.function << "] ";
-        }
-        
-        // Add message
-        ss << record.message;
-        
-        // Output to console
-        if (record.level >= LogLevel::ERROR) {
-            std::cerr << ss.str() << std::endl;
-        } else {
-            std::cout << ss.str() << std::endl;
-        }
-    }
+    void log(const LogRecord& record) override;
 };
 
 // File log sink
 class FileSink : public LogSink {
 public:
-    FileSink(const std::string& filename) : filename_(filename) {
-        file_.open(filename, std::ios::out | std::ios::app);
-        if (!file_.is_open()) {
-            throw std::runtime_error("Failed to open log file: " + filename);
-        }
-    }
+    FileSink(const std::string& filename);
+    ~FileSink();
     
-    ~FileSink() {
-        if (file_.is_open()) {
-            file_.close();
-        }
-    }
-    
-    void log(const LogRecord& record) override {
-        if (!file_.is_open()) {
-            return;
-        }
-        
-        std::stringstream ss;
-        
-        // Format time
-        auto time_t = std::chrono::system_clock::to_time_t(record.time);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            record.time.time_since_epoch() % std::chrono::seconds(1)).count();
-        std::tm tm_info;
-        localtime_s(&tm_info, &time_t);
-        ss << std::put_time(&tm_info, "%Y-%m-%d %H:%M:%S") 
-           << "." << std::setfill('0') << std::setw(3) << ms << " ";
-        
-        // Add log level
-        ss << "[" << logLevelToString(record.level) << "] ";
-        
-        // Add thread ID
-        ss << "[" << record.thread_id << "] ";
-        
-        // Add file and line number
-        if (!record.file.empty()) {
-            ss << "[" << record.file << ":" << record.line << "] ";
-        }
-        
-        // Add function name
-        if (!record.function.empty()) {
-            ss << "[" << record.function << "] ";
-        }
-        
-        // Add message
-        ss << record.message;
-        
-        // Output to file
-        file_ << ss.str() << std::endl;
-        file_.flush();
-    }
+    void log(const LogRecord& record) override;
     
 private:
     std::string filename_;
@@ -163,88 +77,51 @@ private:
 };
 
 // Logger manager
-class Logger {
+class NEXT_GEN_API Logger {
 public:
-    static Logger& instance() {
-        static Logger instance;
-        return instance;
-    }
+    static Logger& instance();
     
     // Add log sink
-    void addSink(std::shared_ptr<LogSink> sink) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        sinks_.push_back(sink);
-    }
+    void addSink(std::shared_ptr<LogSink> sink);
+    
+    // Initialize logger with file
+    void init(const std::string& filename, LogLevel level = LogLevel::INFO);
     
     // Set log level
-    void setLevel(LogLevel level) {
-        level_ = level;
-    }
+    void setLevel(LogLevel level);
     
     // Get log level
-    LogLevel getLevel() const {
-        return level_;
-    }
+    LogLevel getLevel() const;
     
     // Log message
     void log(LogLevel level, const std::string& message, 
              const std::string& file = "", int line = 0, 
-             const std::string& function = "") {
-        if (level < level_) {
-            return;
-        }
-        
-        LogRecord record;
-        record.time = std::chrono::system_clock::now();
-        record.level = level;
-        record.message = message;
-        record.file = file;
-        record.line = line;
-        record.function = function;
-        record.thread_id = std::this_thread::get_id();
-        
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& sink : sinks_) {
-            sink->log(record);
-        }
-    }
+             const std::string& function = "");
     
     // Convenience logging methods
     void trace(const std::string& message, 
                const std::string& file = "", int line = 0, 
-               const std::string& function = "") {
-        log(LogLevel::TRACE, message, file, line, function);
-    }
+               const std::string& function = "");
     
     void debug(const std::string& message, 
                const std::string& file = "", int line = 0, 
-               const std::string& function = "") {
-        log(LogLevel::DEBUG, message, file, line, function);
-    }
+               const std::string& function = "");
     
     void info(const std::string& message, 
               const std::string& file = "", int line = 0, 
-              const std::string& function = "") {
-        log(LogLevel::INFO, message, file, line, function);
-    }
+              const std::string& function = "");
     
     void warning(const std::string& message, 
                  const std::string& file = "", int line = 0, 
-                 const std::string& function = "") {
-        log(LogLevel::WARNING, message, file, line, function);
-    }
+                 const std::string& function = "");
     
     void error(const std::string& message, 
                const std::string& file = "", int line = 0, 
-               const std::string& function = "") {
-        log(LogLevel::ERROR, message, file, line, function);
-    }
+               const std::string& function = "");
     
     void fatal(const std::string& message, 
                const std::string& file = "", int line = 0, 
-               const std::string& function = "") {
-        log(LogLevel::FATAL, message, file, line, function);
-    }
+               const std::string& function = "");
     
 private:
     Logger() {
@@ -254,7 +131,6 @@ private:
     }
     
     ~Logger() = default;
-    
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
     

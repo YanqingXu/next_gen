@@ -17,7 +17,7 @@ inline std::shared_ptr<Service> Module::getService() {
 inline Result<void> Module::postMessage(std::unique_ptr<Message> message) {
     auto service = getService();
     if (!service) {
-        return Result<void>(ErrorCode::SERVICE_NOT_AVAILABLE, "Service is not available");
+        return Result<void>(ErrorCode::SERVICE_NOT_FOUND, "Service is not available");
     }
     return service->postMessage(std::move(message));
 }

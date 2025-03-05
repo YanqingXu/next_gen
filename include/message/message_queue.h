@@ -56,137 +56,31 @@ public:
     }
     
     // Push message to queue
-    void push(std::unique_ptr<Message> message) override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // If queue is shutdown, discard message
-        if (shutdown_) {
-            NEXT_GEN_LOG_WARNING("Attempt to push message to shutdown queue");
-            return;
-        }
-        
-        // If queue is full, wait
-        if (max_size_ > 0 && queue_.size() >= max_size_) {
-            NEXT_GEN_LOG_WARNING("Message queue is full, waiting for space");
-            not_full_.wait(lock, [this] { 
-                return queue_.size() < max_size_ || shutdown_; 
-            });
-            
-            // Check again if queue is shutdown
-            if (shutdown_) {
-                NEXT_GEN_LOG_WARNING("Queue shutdown while waiting to push message");
-                return;
-            }
-        }
-        
-        // Push message
-        queue_.push(std::move(message));
-        
-        // Notify waiting consumers
-        lock.unlock();
-        not_empty_.notify_one();
-    }
+    void push(std::unique_ptr<Message> message) override;
     
     // Pop message from queue, block if queue is empty
-    std::unique_ptr<Message> pop() override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // Wait for queue to be non-empty or shutdown
-        not_empty_.wait(lock, [this] { 
-            return !queue_.empty() || shutdown_; 
-        });
-        
-        // If queue is shutdown and empty, return nullptr
-        if (queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        std::unique_ptr<Message> message = std::move(queue_.front());
-        queue_.pop();
-        
-        // Notify waiting producers
-        lock.unlock();
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> pop() override;
     
     // Try to pop message from queue, return nullptr if queue is empty
-    std::unique_ptr<Message> tryPop() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        
-        // If queue is empty, return nullptr
-        if (queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        std::unique_ptr<Message> message = std::move(queue_.front());
-        queue_.pop();
-        
-        // Notify waiting producers
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> tryPop() override;
     
     // Try to pop message from queue, wait for specified time if queue is empty
-    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // Wait for queue to be non-empty or timeout
-        bool success = not_empty_.wait_for(lock, timeout, [this] { 
-            return !queue_.empty() || shutdown_; 
-        });
-        
-        // If timeout or queue is empty, return nullptr
-        if (!success || queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        std::unique_ptr<Message> message = std::move(queue_.front());
-        queue_.pop();
-        
-        // Notify waiting producers
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override;
     
     // Get queue size
-    size_t size() const override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.size();
-    }
+    size_t size() const override;
     
     // Check if queue is empty
-    bool empty() const override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.empty();
-    }
+    bool empty() const override;
     
     // Clear queue
-    void clear() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::queue<std::unique_ptr<Message>> empty;
-        std::swap(queue_, empty);
-        not_full_.notify_all();
-    }
+    void clear() override;
     
     // Shutdown queue
-    void shutdown() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        shutdown_ = true;
-        not_empty_.notify_all();
-        not_full_.notify_all();
-    }
+    void shutdown() override;
     
     // Check if queue is shutdown
-    bool isShutdown() const override {
-        return shutdown_;
-    }
+    bool isShutdown() const override;
     
 private:
     std::queue<std::unique_ptr<Message>> queue_;
@@ -203,160 +97,38 @@ public:
     PriorityMessageQueue(size_t maxSize = 0) 
         : max_size_(maxSize), shutdown_(false) {}
     
-    ~PriorityMessageQueue() {
-        shutdown();
-    }
+    ~PriorityMessageQueue();
     
     // Push message to queue
-    void push(std::unique_ptr<Message> message) override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // If queue is shutdown, discard message
-        if (shutdown_) {
-            NEXT_GEN_LOG_WARNING("Attempt to push message to shutdown queue");
-            return;
-        }
-        
-        // If queue is full, wait
-        if (max_size_ > 0 && queue_.size() >= max_size_) {
-            NEXT_GEN_LOG_WARNING("Message queue is full, waiting for space");
-            not_full_.wait(lock, [this] { 
-                return queue_.size() < max_size_ || shutdown_; 
-            });
-            
-            // Check again if queue is shutdown
-            if (shutdown_) {
-                NEXT_GEN_LOG_WARNING("Queue shutdown while waiting to push message");
-                return;
-            }
-        }
-        
-        // Calculate priority (can be adjusted based on message type or other factors)
-        int priority = calculatePriority(*message);
-        
-        // Push message
-        queue_.push(std::make_pair(priority, std::move(message)));
-        
-        // Notify waiting consumers
-        lock.unlock();
-        not_empty_.notify_one();
-    }
+    void push(std::unique_ptr<Message> message) override;
     
     // Pop message from queue, block if queue is empty
-    std::unique_ptr<Message> pop() override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // Wait for queue to be non-empty or shutdown
-        not_empty_.wait(lock, [this] { 
-            return !queue_.empty() || shutdown_; 
-        });
-        
-        // If queue is shutdown and empty, return nullptr
-        if (queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
-        queue_.pop();
-        std::unique_ptr<Message> message = std::move(top.second);
-        
-        // Notify waiting producers
-        lock.unlock();
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> pop() override;
     
     // Try to pop message from queue, return nullptr if queue is empty
-    std::unique_ptr<Message> tryPop() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        
-        // If queue is empty, return nullptr
-        if (queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
-        queue_.pop();
-        std::unique_ptr<Message> message = std::move(top.second);
-        
-        // Notify waiting producers
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> tryPop() override;
     
     // Try to pop message from queue, wait for specified time if queue is empty
-    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override {
-        std::unique_lock<std::mutex> lock(mutex_);
-        
-        // Wait for queue to be non-empty or timeout
-        bool success = not_empty_.wait_for(lock, timeout, [this] { 
-            return !queue_.empty() || shutdown_; 
-        });
-        
-        // If timeout or queue is empty, return nullptr
-        if (!success || queue_.empty()) {
-            return nullptr;
-        }
-        
-        // Pop message
-        auto top = std::move(const_cast<std::pair<int, std::unique_ptr<Message>>&>(queue_.top()));
-        queue_.pop();
-        std::unique_ptr<Message> message = std::move(top.second);
-        
-        // Notify waiting producers
-        not_full_.notify_one();
-        
-        return message;
-    }
+    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override;
     
     // Get queue size
-    size_t size() const override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.size();
-    }
+    size_t size() const override;
     
     // Check if queue is empty
-    bool empty() const override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return queue_.empty();
-    }
+    bool empty() const override;
     
     // Clear queue
-    void clear() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::priority_queue<
-            std::pair<int, std::unique_ptr<Message>>,
-            std::vector<std::pair<int, std::unique_ptr<Message>>>,
-            PriorityCompare
-        > empty;
-        std::swap(queue_, empty);
-        not_full_.notify_all();
-    }
+    void clear() override;
     
     // Shutdown queue
-    void shutdown() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        shutdown_ = true;
-        not_empty_.notify_all();
-        not_full_.notify_all();
-    }
+    void shutdown() override;
     
     // Check if queue is shutdown
-    bool isShutdown() const override {
-        return shutdown_;
-    }
+    bool isShutdown() const override;
     
 protected:
     // Calculate message priority (can be overridden in subclasses)
-    virtual int calculatePriority(const Message& message) const {
-        // Default implementation: calculate priority based on message category
-        // Priority calculation can be adjusted as needed
-        return static_cast<int>(message.getCategory());
-    }
+    virtual int calculatePriority(const Message& message) const;
     
 private:
     // Priority comparator
@@ -364,9 +136,7 @@ private:
         bool operator()(
             const std::pair<int, std::unique_ptr<Message>>& a,
             const std::pair<int, std::unique_ptr<Message>>& b
-        ) const {
-            return a.first < b.first;
-        }
+        ) const;
     };
     
     std::priority_queue<
@@ -380,6 +150,123 @@ private:
     size_t max_size_;
     std::atomic<bool> shutdown_;
 };
+
+// Lock-free message queue implementation using atomic operations
+class NEXT_GEN_API LockFreeMessageQueue : public MessageQueue {
+public:
+    LockFreeMessageQueue(size_t capacity = 1024)
+        : capacity_(capacity), head_(0), tail_(0), shutdown_(false) {
+        // Allocate buffer with capacity + 1 elements (to distinguish between empty and full)
+        buffer_ = new std::atomic<Message*>[capacity + 1];
+        for (size_t i = 0; i <= capacity; ++i) {
+            buffer_[i].store(nullptr, std::memory_order_relaxed);
+        }
+    }
+    
+    ~LockFreeMessageQueue();
+    
+    // Push message to queue
+    void push(std::unique_ptr<Message> message) override;
+    
+    // Pop message from queue, block if queue is empty
+    std::unique_ptr<Message> pop() override;
+    
+    // Try to pop message from queue, return nullptr if queue is empty
+    std::unique_ptr<Message> tryPop();
+    
+    // Try to pop message from queue, wait for specified time if queue is empty
+    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override;
+    
+    // Get queue size (approximate)
+    size_t size() const override;
+    
+    // Check if queue is empty
+    bool empty() const override;
+    
+    // Clear queue
+    void clear() override;
+    
+    // Shutdown queue
+    void shutdown() override;
+    
+    // Check if queue is shutdown
+    bool isShutdown() const override;
+    
+private:
+    size_t capacity_;
+    std::atomic<Message*>* buffer_;
+    std::atomic<size_t> head_;
+    std::atomic<size_t> tail_;
+    std::atomic<bool> shutdown_;
+};
+
+// Multi-producer, multi-consumer lock-free message queue using ring buffer
+class NEXT_GEN_API MPMCMessageQueue : public MessageQueue {
+public:
+    MPMCMessageQueue(size_t capacity = 1024)
+        : capacity_(capacity), shutdown_(false) {
+        // Initialize ring buffer
+        buffer_ = new Cell[capacity_];
+        for (size_t i = 0; i < capacity_; ++i) {
+            buffer_[i].sequence.store(i, std::memory_order_relaxed);
+        }
+        
+        // Initialize enqueue and dequeue positions
+        enqueue_pos_.store(0, std::memory_order_relaxed);
+        dequeue_pos_.store(0, std::memory_order_relaxed);
+    }
+    
+    ~MPMCMessageQueue();
+    
+    // Push message to queue
+    void push(std::unique_ptr<Message> message) override;
+    
+    // Pop message from queue, block if queue is empty
+    std::unique_ptr<Message> pop();
+    
+    // Try to pop message from queue, return nullptr if queue is empty
+    std::unique_ptr<Message> tryPop() override;
+    
+    // Try to pop message from queue, wait for specified time if queue is empty
+    std::unique_ptr<Message> waitAndPop(const std::chrono::milliseconds& timeout) override;
+
+    // Get queue size
+    size_t size() const;
+    
+    // Check if queue is empty
+    bool empty() const override;
+    
+    // Clear queue
+    void clear() override;
+    
+    // Shutdown queue
+    void shutdown() override;
+    
+    // Check if queue is shutdown
+    bool isShutdown() const override;
+    
+private:
+    struct Cell {
+        std::atomic<size_t> sequence;
+        Message* data;
+        
+        Cell() : data(nullptr) {
+            sequence.store(0, std::memory_order_relaxed);
+        }
+    };
+    
+    size_t capacity_;
+    Cell* buffer_;
+    std::atomic<size_t> enqueue_pos_;
+    std::atomic<size_t> dequeue_pos_;
+    std::atomic<bool> shutdown_;
+    
+    // Cache line padding to prevent false sharing
+    char padding_[64 - sizeof(std::atomic<bool>)];
+};
+
+// Factory function to create message queue
+std::unique_ptr<MessageQueue> createMessageQueue(const std::string& type = "default", size_t capacity = 1024);
 
 } // namespace next_gen
 
