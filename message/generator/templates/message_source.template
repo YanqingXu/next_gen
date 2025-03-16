@@ -1,0 +1,92 @@
+#include "{{ header_include_path }}"
+#include "message/include/types.h"
+#include "utils/logger.h"
+
+namespace next_gen {
+namespace message {
+
+{{ message_class_name }}::{{ message_class_name }}()
+    : MessageBase(CATEGORY, ID)
+{% for field %}{% if field_has_default %}
+    , {{ field_name_lower }}({{ field_default_value }}){% endif %}{% endfor %} {
+    // 初始化代码
+}
+
+std::vector<FieldInfo> {{ message_class_name }}::getFieldInfo() const {
+    std::vector<FieldInfo> fields;
+{% for field %}
+    fields.push_back(FieldInfo(
+        "{{ field_name }}",
+        {{ field_type_enum }},
+        "{{ field_type_name }}",
+        "{{ field_description }}",
+        {{ field_is_vector_bool }},
+        {{ field_is_required_bool }}
+    ));
+{% endfor %}
+    return fields;
+}
+
+MessageSizeType {{ message_class_name }}::getSerializedSize() const {
+    MessageSizeType size = 0;
+{% for field %}
+    // {{ field_name }}
+    {{ field_size_code }}
+{% endfor %}
+    return size;
+}
+
+void {{ message_class_name }}::serialize(ByteStream& stream) const {
+{% for field %}
+    // {{ field_name }}
+    {{ field_serialize_code }}
+{% endfor %}
+}
+
+void {{ message_class_name }}::deserialize(ByteStream& stream) {
+{% for field %}
+    // {{ field_name }}
+    {{ field_deserialize_code }}
+{% endfor %}
+}
+
+std::unique_ptr<MessageBase> {{ message_class_name }}::clone() const {
+    auto clone = std::make_unique<{{ message_class_name }}>();
+{% for field %}
+    clone->{{ field_name_lower }} = this->{{ field_name_lower }};
+{% endfor %}
+    clone->setSessionId(this->getSessionId());
+    clone->setTimestamp(this->getTimestamp());
+    return clone;
+}
+
+std::string {{ message_class_name }}::toString() const {
+    std::stringstream ss;
+    ss << "{{ message_class_name }}[" << std::endl;
+    ss << "  category=" << CATEGORY << "," << std::endl;
+    ss << "  id=" << ID << "," << std::endl;
+    ss << "  version=" << getVersion() << "," << std::endl;
+{% for field %}
+    ss << "  {{ field_name }}=";
+{% if field_is_vector %}
+    ss << "{";
+    for (size_t i = 0; i < {{ field_name_lower }}.size(); ++i) {
+        {{ field_to_string_code }}
+        if (i < {{ field_name_lower }}.size() - 1) {
+            ss << ", ";
+        }
+    }
+    ss << "}";
+{% else %}
+    {{ field_to_string_code }}
+{% endif %}
+    ss << "," << std::endl;
+{% endfor %}
+    ss << "  session_id=" << getSessionId() << "," << std::endl;
+    ss << "  timestamp=" << getTimestamp() << std::endl;
+    ss << "]";
+    return ss.str();
+}
+
+} // namespace message
+} // namespace next_gen

@@ -1,0 +1,132 @@
+#include "message/include/legacy/adapter.h"
+{% for message %}
+#include "{{ message_header_path }}"
+{% endfor %}
+
+namespace next_gen {
+namespace message {
+namespace legacy {
+
+// 初始化静态成员
+std::unordered_map<
+    std::pair<MessageCategoryType, MessageIdType>,
+    std::function<std::unique_ptr<MessageBase>(void*)>
+> MessageAdapter::fromLegacyConverters_;
+
+std::unordered_map<
+    std::pair<MessageCategoryType, MessageIdType>,
+    std::function<void*(const MessageBase&)>
+> MessageAdapter::toLegacyConverters_;
+
+// 实现从旧格式转换到新格式
+std::unique_ptr<MessageBase> MessageAdapter::fromLegacyFormat(void* old_msg_ptr, MessageCategoryType category, MessageIdType id) {
+    if (!old_msg_ptr) {
+        return nullptr;
+    }
+    
+    auto key = std::make_pair(category, id);
+    auto it = fromLegacyConverters_.find(key);
+    
+    if (it != fromLegacyConverters_.end()) {
+        return it->second(old_msg_ptr);
+    }
+    
+    Logger::warning("No converter found for legacy message [{}, {}]", category, id);
+    return nullptr;
+}
+
+// 实现从新格式转换到旧格式
+void* MessageAdapter::toLegacyFormat(const MessageBase& new_msg) {
+    auto category = new_msg.getCategory();
+    auto id = new_msg.getId();
+    auto key = std::make_pair(category, id);
+    
+    auto it = toLegacyConverters_.find(key);
+    if (it != toLegacyConverters_.end()) {
+        return it->second(new_msg);
+    }
+    
+    Logger::warning("No converter found for message [{}, {}] ({})",
+                   category, id, new_msg.getName());
+    return nullptr;
+}
+
+// Legacy Handler Adapter implementation
+LegacyHandlerAdapter::LegacyHandlerAdapter(
+    const std::string& name,
+    MessageCategoryType category,
+    MessageIdType id,
+    std::function<bool(void*)> handler
+) : name_(name), category_(category), id_(id), legacy_handler_(handler) {
+}
+
+bool LegacyHandlerAdapter::handleMessage(const MessageBase& message) {
+    if (message.getCategory() != category_ || message.getId() != id_) {
+        return false;
+    }
+    
+    // 将新格式消息转换为旧格式
+    void* legacy_msg = toLegacyFormat(message);
+    if (!legacy_msg) {
+        Logger::error("Failed to convert message [{}, {}] to legacy format", 
+                     message.getCategory(), message.getId());
+        return false;
+    }
+    
+    // 调用旧处理器处理消息
+    bool result = legacy_handler_(legacy_msg);
+    
+    // 释放旧格式消息内存
+    // 注意：这里假设旧消息系统使用的是C风格内存管理，需要手动释放
+    // 如果旧系统使用不同的内存管理方式，可能需要调整
+    free(legacy_msg);
+    
+    return result;
+}
+
+std::string LegacyHandlerAdapter::getName() const {
+    return name_;
+}
+
+MessageCategoryType LegacyHandlerAdapter::getCategory() const {
+    return category_;
+}
+
+MessageIdType LegacyHandlerAdapter::getId() const {
+    return id_;
+}
+
+// 创建旧处理器适配器
+std::unique_ptr<MessageHandler> createLegacyHandler(
+    const std::string& name,
+    MessageCategoryType category,
+    MessageIdType id,
+    std::function<bool(void*)> handler
+) {
+    return std::make_unique<LegacyHandlerAdapter>(name, category, id, handler);
+}
+
+// 为每个消息类型生成类型转换特化
+{% for message %}
+// {{ message_name }} 转换器特化
+// 注意：这里需要手动补充具体的字段转换逻辑
+template<>
+bool convertFromLegacy(const Legacy{{ message_name }}& old_msg, {{ message_class_name }}& new_msg) {
+    // TODO: 实现具体的转换逻辑
+    return true;
+}
+
+template<>
+bool convertToLegacy(const {{ message_class_name }}& new_msg, Legacy{{ message_name }}& old_msg) {
+    // TODO: 实现具体的转换逻辑
+    return true;
+}
+
+// 注册 {{ message_name }} 转换器
+REGISTER_LEGACY_CONVERTER(Legacy{{ message_name }}, {{ message_class_name }})
+
+{% endfor %}
+
+} // namespace legacy
+} // namespace message
+} // namespace next_gen

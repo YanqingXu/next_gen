@@ -1,0 +1,109 @@
+#pragma once
+
+#include <vector>
+#include <string>
+#include "message/include/message_base.h"
+#include "message/include/message_factory.h"
+{% if has_additional_includes %}{{ additional_includes }}{% endif %}
+
+namespace next_gen {
+namespace message {
+
+/**
+ * @brief {{ message_name }} 消息
+ * 
+ * {{ message_description }}
+ * 
+ * @category {{ message_category }}
+ * @id {{ message_id }}
+ * @version {{ message_version }}
+ */
+class {{ message_class_name }} : public MessageBase {
+public:
+    // 消息类别和ID常量
+    static constexpr MessageCategoryType CATEGORY = {{ message_category }};
+    static constexpr MessageIdType ID = {{ message_id }};
+    static constexpr const char* NAME = "{{ message_name }}";
+    
+    /**
+     * @brief 默认构造函数
+     */
+    {{ message_class_name }}();
+    
+    /**
+     * @brief 析构函数
+     */
+    ~{{ message_class_name }}() override = default;
+    
+    /**
+     * @brief 获取消息名称
+     */
+    std::string getName() const override { return NAME; }
+    
+    /**
+     * @brief 获取消息描述
+     */
+    std::string getDescription() const override { return "{{ message_description }}"; }
+    
+    /**
+     * @brief 获取消息版本
+     */
+    uint16_t getVersion() const override { return {{ message_version }}; }
+    
+    /**
+     * @brief 获取字段信息
+     */
+    std::vector<FieldInfo> getFieldInfo() const override;
+    
+    /**
+     * @brief 计算序列化大小
+     */
+    MessageSizeType getSerializedSize() const override;
+    
+    /**
+     * @brief 序列化消息
+     */
+    void serialize(ByteStream& stream) const override;
+    
+    /**
+     * @brief 反序列化消息
+     */
+    void deserialize(ByteStream& stream) override;
+    
+    /**
+     * @brief 克隆消息
+     */
+    std::unique_ptr<MessageBase> clone() const override;
+    
+    /**
+     * @brief 转换为字符串表示
+     */
+    std::string toString() const override;
+    
+    // 字段访问器
+{% for field %}
+    /**
+     * @brief 获取{{ field_name }}
+     * {{ field_description }}
+     */
+    {% if field_is_vector %}const std::vector<{{ field_cpp_type }}>& {% else %}{{ field_cpp_type }} {% endif %}get{{ field_name_capitalized }}() const { return {{ field_name_lower }}; }
+    
+    /**
+     * @brief 设置{{ field_name }}
+     * {{ field_description }}
+     */
+    void set{{ field_name_capitalized }}({% if field_is_vector %}const std::vector<{{ field_cpp_type }}>& {% else %}{{ field_cpp_type }} {% endif %}value) { {{ field_name_lower }} = value; }
+{% endfor %}
+
+private:
+    // 消息字段
+{% for field %}
+    {% if field_is_vector %}std::vector<{{ field_cpp_type }}> {% else %}{{ field_cpp_type }} {% endif %}{{ field_name_lower }}{% if field_has_default %} = {{ field_default_value }}{% endif %};
+{% endfor %}
+};
+
+// 注册消息类型到工厂
+REGISTER_MESSAGE_TYPE({{ message_class_name }})
+
+} // namespace message
+} // namespace next_gen

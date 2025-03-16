@@ -1,0 +1,32 @@
+#include "message/include/message_factory.h"
+{% for message %}
+#include "{{ message_header_path }}"
+{% endfor %}
+
+namespace next_gen {
+namespace message {
+
+// 这个文件由消息生成器自动生成，用于注册所有消息类型到工厂
+
+// 注册所有消息类型的函数
+void registerAllMessageTypes() {
+    // 获取工厂单例
+    auto& factory = DefaultMessageFactory::instance();
+    
+    // 注册所有消息类型
+{% for message %}
+    factory.registerMessageType<{{ message_class_name }}>();
+{% endfor %}
+}
+
+// 自动注册所有消息类型
+namespace {
+    struct AutoRegister {
+        AutoRegister() {
+            registerAllMessageTypes();
+        }
+    } g_auto_register;
+}
+
+} // namespace message
+} // namespace next_gen
