@@ -13,7 +13,7 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{a1b2c3d4-e5f6-47a8-b9c0-d1e2f3g4h5i6}</ProjectGuid>
+    <ProjectGuid>{0F9489ED-27B2-4E60-9F1E-4957EAD7FAE4}</ProjectGuid>
     <RootNamespace>MessageCore</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
