@@ -23,9 +23,18 @@ include_directories(
 
 # 源文件
 set(NEXT_GEN_SOURCES
+    "src/core/service.cpp"
+    "src/module/module.cpp"
     "src/network/net_service.cpp"
     "src/network/tcp_service.cpp"
     "src/network/tcp_session.cpp"
+    "src/network/udp_service.cpp"
+    "src/message/lock_free_message_queue.cpp"
+    "src/message/message_queue.cpp"
+    "src/message/priority_compare.cpp"
+    "src/utils/logger.cpp"
+    "src/utils/timer.cpp"
+    "src/utils/timer_manager.cpp"
 )
 
 # 头文件
@@ -41,6 +50,7 @@ set(NEXT_GEN_HEADERS
     "include/network/net_service.h"
     "include/network/tcp_service.h"
     "include/network/tcp_session.h"
+    "include/network/udp_service.h"
     "include/utils/error.h"
     "include/utils/logger.h"
     "include/utils/timer.h"
